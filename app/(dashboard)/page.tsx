@@ -156,12 +156,12 @@ export default function DashboardPage() {
           {metrics?.avgMatchScore ? `Average match score: ${metrics.avgMatchScore}%.` : ''}
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
-          <Link href="/dashboard/jobs">
+          <Link href="/jobs">
             <Button size="sm" variant="primary" rightIcon={<ArrowRight className="h-3.5 w-3.5" />}>
               Browse Jobs
             </Button>
           </Link>
-          <Link href="/dashboard/resume">
+          <Link href="/resume">
             <Button size="sm" variant="secondary">Upload Resume</Button>
           </Link>
         </div>
@@ -223,7 +223,7 @@ export default function DashboardPage() {
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="section-title">Recent Jobs</h2>
-          <Link href="/dashboard/jobs" className="text-xs font-medium text-brand-light hover:underline">
+          <Link href="/jobs" className="text-xs font-medium text-brand-light hover:underline">
             View all →
           </Link>
         </div>
@@ -245,7 +245,7 @@ export default function DashboardPage() {
                   <C2CBadge status={job.c2cStatus} size="xs" />
                   {job.score?.overall !== undefined && <ScoreBadge score={job.score.overall} size="sm" />}
                 </div>
-                <Link href={`/dashboard/jobs`} className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:text-slate-300 transition">
+                <Link href={`/jobs`} className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:text-slate-300 transition">
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>

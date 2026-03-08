@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { KanbanSquare, Plus, BarChart3 } from 'lucide-react';
 import { KanbanBoard } from '@/components/applications/KanbanBoard';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +22,7 @@ interface EnrichedApplication extends Application {
 }
 
 export default function ApplicationsPage() {
+  const router = useRouter();
   const [applications, setApplications] = useState<EnrichedApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
@@ -100,7 +102,7 @@ export default function ApplicationsPage() {
             variant="primary"
             size="sm"
             leftIcon={<Plus className="h-3.5 w-3.5" />}
-            onClick={() => window.location.href = '/dashboard/jobs'}
+            onClick={() => router.push('/jobs')}
           >
             Add Application
           </Button>

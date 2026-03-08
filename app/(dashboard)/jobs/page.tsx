@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
 import { Search, Filter, SlidersHorizontal, RefreshCw, Briefcase } from 'lucide-react';
 import { JobCard } from '@/components/jobs/JobCard';
@@ -29,6 +30,7 @@ const SORT_OPTIONS = [
 ];
 
 export default function JobsPage() {
+  const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -212,10 +214,10 @@ export default function JobsPage() {
                 job={job}
                 onSave={id => handleStatusChange(id, 'saved')}
                 onTailor={id => {
-                  window.location.href = `/dashboard/resume?tailor=${id}`;
+                  router.push(`/resume?tailor=${id}`);
                 }}
                 onViewDetail={id => {
-                  window.location.href = `/dashboard/jobs/${id}`;
+                  router.push(`/jobs/${id}`);
                 }}
               />
             ))}

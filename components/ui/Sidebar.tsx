@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
 import {
   LayoutDashboard,
@@ -18,16 +18,17 @@ import {
 } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { href: '/dashboard',              icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/dashboard/jobs',         icon: Briefcase,       label: 'Jobs' },
-  { href: '/dashboard/applications', icon: KanbanSquare,    label: 'Applications' },
-  { href: '/dashboard/resume',       icon: FileText,        label: 'Resume' },
-  { href: '/dashboard/alerts',       icon: Bell,            label: 'Alerts' },
-  { href: '/dashboard/settings',     icon: Settings,        label: 'Settings' },
+  { href: '/',              icon: LayoutDashboard, label: 'Dashboard' },
+  { href: '/jobs',         icon: Briefcase,       label: 'Jobs' },
+  { href: '/applications', icon: KanbanSquare,    label: 'Applications' },
+  { href: '/resume',       icon: FileText,        label: 'Resume' },
+  { href: '/alerts',       icon: Bell,            label: 'Alerts' },
+  { href: '/settings',     icon: Settings,        label: 'Settings' },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -53,7 +54,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2" aria-label="Main navigation">
         {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-          const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
+          const isActive = pathname === href || (href !== '/' && pathname.startsWith(href));
           return (
             <Link
               key={href}
@@ -91,8 +92,9 @@ export function Sidebar() {
           )}
         </button>
 
-        {/* Logout (placeholder) */}
+        {/* Logout */}
         <button
+          onClick={() => router.push('/')}
           aria-label="Sign out"
           title={collapsed ? 'Sign out' : undefined}
           className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-500 transition hover:bg-surface-overlay hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"

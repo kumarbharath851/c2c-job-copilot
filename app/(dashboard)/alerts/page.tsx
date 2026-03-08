@@ -10,6 +10,7 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   const [form, setForm] = useState({
     name: '', keyword: '', c2cFilter: 'any', workMode: 'any',
@@ -41,9 +42,10 @@ export default function AlertsPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to create alert');
       setAlerts(prev => [data, ...prev]);
       setShowForm(false);
+      setCreateError('');
       setForm({ name: '', keyword: '', c2cFilter: 'any', workMode: 'any', skills: '', minRate: '', emailDigest: false, digestFrequency: 'daily' });
-    } catch {
-      // TODO: show error
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create alert');
     } finally {
       setSaving(false);
     }
@@ -131,8 +133,11 @@ export default function AlertsPage() {
           </div>
           <div className="flex gap-3">
             <Button type="submit" variant="primary" size="sm" loading={saving}>Save Alert</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setShowForm(false); setCreateError(''); }}>Cancel</Button>
           </div>
+          {createError && (
+            <p className="text-xs text-red-400">{createError}</p>
+          )}
         </form>
       )}
 

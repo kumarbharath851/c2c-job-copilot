@@ -26,6 +26,7 @@ export default function ResumePage() {
   const [tailoredResume, setTailoredResume] = useState<TailoredResume | null>(null);
   const [tailorJobId, setTailorJobId] = useState('');
   const [tailoring, setTailoring] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -241,12 +242,19 @@ export default function ResumePage() {
         </div>
 
         {/* Right panel: diff viewer */}
-        <div>
+        <div className="space-y-3">
+          {saveSuccess && (
+            <div className="flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/8 px-3 py-2.5 text-xs text-emerald-400">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Changes accepted. Export functionality coming soon — copy the tailored text above.
+            </div>
+          )}
           {tailoredResume ? (
             <ResumeDiffViewer
               tailoredResume={tailoredResume}
               onSaveAccepted={() => {
-                alert('Export feature coming soon. Review completed changes above.');
+                setSaveSuccess(true);
+                setTimeout(() => setSaveSuccess(false), 5000);
               }}
             />
           ) : (
