@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { C2CBadge, ScoreBadge } from '@/components/ui/Badge';
 import type { Job } from '@/lib/types/job';
 import type { Application } from '@/lib/types/application';
+import { apiFetch } from '@/lib/api';
 
 interface DashboardMetrics {
   newJobs: number;
@@ -72,8 +73,8 @@ export default function DashboardPage() {
     async function load() {
       try {
         const [jobsRes, appsRes] = await Promise.all([
-          fetch('/api/jobs?limit=5&sort=ingestedAt'),
-          fetch('/api/applications'),
+          apiFetch('/api/jobs?limit=5&sort=ingestedAt'),
+          apiFetch('/api/applications'),
         ]);
         const jobsData = await jobsRes.json();
         const appsData = await appsRes.json();
@@ -117,7 +118,7 @@ export default function DashboardPage() {
     setIngesting(true);
     setIngestResult(null);
     try {
-      const res = await fetch('/api/jobs', {
+      const res = await apiFetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: ingestUrl }),

@@ -7,6 +7,7 @@ import { Search, Filter, SlidersHorizontal, RefreshCw, Briefcase } from 'lucide-
 import { JobCard } from '@/components/jobs/JobCard';
 import { Button } from '@/components/ui/Button';
 import type { Job } from '@/lib/types/job';
+import { apiFetch } from '@/lib/api';
 
 const C2C_OPTIONS = [
   { value: 'any',       label: 'All C2C' },
@@ -58,7 +59,7 @@ export default function JobsPage() {
       if (append && cursor) params.set('cursor', cursor);
       params.set('limit', '12');
 
-      const res = await fetch(`/api/jobs?${params}`);
+      const res = await apiFetch(`/api/jobs?${params}`);
       const data = await res.json();
       setJobs(prev => append ? [...prev, ...(data.jobs || [])] : (data.jobs || []));
       setTotal(data.total || 0);
@@ -76,7 +77,7 @@ export default function JobsPage() {
   }, [keyword, c2c, workMode, sort, minRate, skills]);
 
   async function handleStatusChange(jobId: string, newStatus: string) {
-    await fetch(`/api/jobs/${jobId}`, {
+    await apiFetch(`/api/jobs/${jobId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),

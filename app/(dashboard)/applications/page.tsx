@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/Badge';
 import { ATSScoreChip } from '@/components/ui/ATSScoreBadge';
 import type { Application, ApplicationStatus } from '@/lib/types/application';
+import { apiFetch } from '@/lib/api';
 
 interface EnrichedApplication extends Application {
   job?: {
@@ -28,7 +29,7 @@ export default function ApplicationsPage() {
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
 
   useEffect(() => {
-    fetch('/api/applications')
+    apiFetch('/api/applications')
       .then(r => r.json())
       .then(d => setApplications(d.applications || []))
       .catch(() => setApplications([]))
@@ -42,14 +43,14 @@ export default function ApplicationsPage() {
     );
 
     try {
-      await fetch(`/api/applications/${appId}`, {
+      await apiFetch(`/api/applications/${appId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
     } catch {
       // Revert on failure — refetch
-      const res = await fetch('/api/applications');
+      const res = await apiFetch('/api/applications');
       const data = await res.json();
       setApplications(data.applications || []);
     }

@@ -6,6 +6,7 @@ import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button';
 import { ResumeDiffViewer } from '@/components/resume/ResumeDiffViewer';
 import type { TailoredResume } from '@/lib/types/resume';
+import { apiFetch } from '@/lib/api';
 
 interface ResumeListItem {
   resumeId: string;
@@ -30,7 +31,7 @@ export default function ResumePage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch('/api/resumes')
+    apiFetch('/api/resumes')
       .then(r => r.json())
       .then(d => {
         setResumes(d.resumes || []);
@@ -57,13 +58,13 @@ export default function ResumePage() {
     formData.append('file', file);
 
     try {
-      const res = await fetch('/api/resumes', { method: 'POST', body: formData });
+      const res = await apiFetch('/api/resumes', { method: 'POST', body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
 
       setUploadSuccess(`Resume uploaded! Found ${data.skillsFound} skills.`);
       // Refresh list
-      const refreshed = await fetch('/api/resumes').then(r => r.json());
+      const refreshed = await apiFetch('/api/resumes').then(r => r.json());
       setResumes(refreshed.resumes || []);
       if (refreshed.resumes?.length > 0) setSelectedResume(refreshed.resumes[0]);
     } catch (err) {
@@ -80,7 +81,7 @@ export default function ResumePage() {
     setTailoredResume(null);
 
     try {
-      const res = await fetch(`/api/resumes/${selectedResume.resumeId}/tailor`, {
+      const res = await apiFetch(`/api/resumes/${selectedResume.resumeId}/tailor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: tailorJobId }),
@@ -100,7 +101,7 @@ export default function ResumePage() {
           return;
         }
         try {
-          const pollRes = await fetch(`/api/resumes/${data.tailoredResumeId}/tailor`);
+          const pollRes = await apiFetch(`/api/resumes/${data.tailoredResumeId}/tailor`);
           const pollData: TailoredResume = await pollRes.json();
           if (pollData.status === 'generating') {
             setTimeout(poll, 2000);
@@ -113,7 +114,7 @@ export default function ResumePage() {
         }
       };
 
-      setTailoredResume({ ...data, status: 'generating', diff: [], missingSkillsWarning: [], sourceResumeId: selectedResume.resumeId, userId: '', aiAuditId: '', generatedAt: '' });
+      setTailoredResume({ ...data, status: 'generating', diff: [], missingSkillsWarning: [], sourceResumeId: selectedResume.resumeId, jobId: tailorJobId, userId: '', aiAuditId: '', generatedAt: new Date().toISOString() });
       setTimeout(poll, 2000);
     } catch (err) {
       console.error(err);

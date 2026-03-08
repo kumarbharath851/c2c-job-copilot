@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Bell, Plus, Trash2, BellRing } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import type { JobAlert } from '@/lib/types/application';
+import { apiFetch } from '@/lib/api';
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<JobAlert[]>([]);
@@ -18,7 +19,7 @@ export default function AlertsPage() {
   });
 
   useEffect(() => {
-    fetch('/api/alerts')
+    apiFetch('/api/alerts')
       .then(r => r.json())
       .then(d => setAlerts(d.alerts || []))
       .catch(() => {})
@@ -29,7 +30,7 @@ export default function AlertsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch('/api/alerts', {
+      const res = await apiFetch('/api/alerts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -55,7 +56,7 @@ export default function AlertsPage() {
     const removed = alerts.find(a => a.alertId === alertId);
     setAlerts(prev => prev.filter(a => a.alertId !== alertId));
     try {
-      const res = await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
     } catch {
       if (removed) setAlerts(prev => [...prev, removed]);
