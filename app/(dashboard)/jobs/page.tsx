@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
-import { Search, SlidersHorizontal, RefreshCw, Briefcase, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Search, SlidersHorizontal, RefreshCw, Briefcase, Sparkles, CheckCircle2, AlertTriangle, Bell } from 'lucide-react';
 import { JobCard } from '@/components/jobs/JobCard';
 import { Button } from '@/components/ui/Button';
 import type { Job } from '@/lib/types/job';
@@ -30,12 +30,31 @@ const SORT_OPTIONS = [
   { value: 'rate',       label: 'Highest Rate' },
 ];
 
+// ─── Module-level cache ───────────────────────────────────────────────────────
+// Persists across client-side navigation within the same browser tab so the
+// jobs list is shown instantly on return visits instead of re-fetching everything.
+const _cache: {
+  jobs: Job[];
+  total: number;
+  cursor: string | null;
+  filtersKey: string;
+} = { jobs: [], total: 0, cursor: null, filtersKey: '' };
+
+function makeFiltersKey(
+  keyword: string, c2c: string, workMode: string,
+  sort: string, minRate: string, skills: string
+) {
+  return `${keyword}|${c2c}|${workMode}|${sort}|${minRate}|${skills}`;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function JobsPage() {
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [newJobsCount, setNewJobsCount] = useState(0);
 
   // Filters
   const [keyword, setKeyword] = useState('');
@@ -48,22 +67,41 @@ export default function JobsPage() {
   const [discovering, setDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<{ added: number; fetched: number; error?: string } | null>(null);
 
+  // Prevents filter-change effect from firing on the very first render
+  const isInitialMount = useRef(true);
+
+  // Build query params shared by fetchJobs and silentRefresh
+  function buildParams(appendCursor?: string | null) {
+    const params = new URLSearchParams();
+    if (keyword)  params.set('keyword',  keyword);
+    if (c2c !== 'any') params.set('c2c', c2c);
+    if (workMode !== 'any') params.set('workMode', workMode);
+    if (sort)     params.set('sort',     sort);
+    if (minRate)  params.set('minRate',  minRate);
+    if (skills)   params.set('skills',   skills);
+    if (appendCursor) params.set('cursor', appendCursor);
+    params.set('limit', '12');
+    return params;
+  }
+
+  // Full fetch — replaces or appends list, updates cache
   const fetchJobs = useCallback(async (append = false) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (keyword) params.set('keyword', keyword);
-      if (c2c !== 'any') params.set('c2c', c2c);
-      if (workMode !== 'any') params.set('workMode', workMode);
-      if (sort) params.set('sort', sort);
-      if (minRate) params.set('minRate', minRate);
-      if (skills) params.set('skills', skills);
-      if (append && cursor) params.set('cursor', cursor);
-      params.set('limit', '12');
-
+      const params = buildParams(append ? cursor : null);
       const res = await apiFetch(`/api/jobs?${params}`);
       const data = await res.json();
-      setJobs(prev => append ? [...prev, ...(data.jobs || [])] : (data.jobs || []));
+      const incoming: Job[] = data.jobs || [];
+
+      setJobs(prev => {
+        const merged = append ? [...prev, ...incoming] : incoming;
+        const key = makeFiltersKey(keyword, c2c, workMode, sort, minRate, skills);
+        _cache.jobs = merged;
+        _cache.total = data.total || 0;
+        _cache.cursor = data.cursor || null;
+        _cache.filtersKey = key;
+        return merged;
+      });
       setTotal(data.total || 0);
       setCursor(data.cursor || null);
     } catch {
@@ -71,11 +109,63 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyword, c2c, workMode, sort, minRate, skills, cursor]);
 
+  // Silent background refresh — only prepends jobs that aren't already in the list
+  const silentRefresh = useCallback(async (key: string) => {
+    try {
+      const params = buildParams();
+      const res = await apiFetch(`/api/jobs?${params}`);
+      const data = await res.json();
+      const incoming: Job[] = data.jobs || [];
+
+      setJobs(prev => {
+        const existingIds = new Set(prev.map(j => j.jobId));
+        const brand_new = incoming.filter(j => !existingIds.has(j.jobId));
+        if (brand_new.length === 0) return prev;
+        const merged = [...brand_new, ...prev];
+        _cache.jobs = merged;
+        _cache.filtersKey = key;
+        setNewJobsCount(brand_new.length);
+        return merged;
+      });
+      setTotal(data.total || 0);
+      _cache.total = data.total || 0;
+      _cache.cursor = data.cursor || null;
+    } catch {
+      // Silent — user still sees the cached list
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyword, c2c, workMode, sort, minRate, skills]);
+
+  // ── On mount: restore from cache instantly, then background-refresh ─────────
   useEffect(() => {
+    const key = makeFiltersKey(keyword, c2c, workMode, sort, minRate, skills);
+    if (_cache.filtersKey === key && _cache.jobs.length > 0) {
+      setJobs(_cache.jobs);
+      setTotal(_cache.total);
+      setCursor(_cache.cursor);
+      setLoading(false);
+      silentRefresh(key);
+    } else {
+      fetchJobs(false);
+    }
+  // runs once on mount only — filter changes handled below
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Filter changes (after initial mount) ────────────────────────────────────
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    setNewJobsCount(0);
+    _cache.filtersKey = ''; // invalidate cache so next mount re-fetches
     const t = setTimeout(() => fetchJobs(false), 300);
     return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyword, c2c, workMode, sort, minRate, skills]);
 
   async function handleStatusChange(jobId: string, newStatus: string) {
@@ -84,7 +174,11 @@ export default function JobsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     });
-    setJobs(prev => prev.map(j => j.jobId === jobId ? { ...j, status: newStatus as 'saved' } : j));
+    setJobs(prev => {
+      const updated = prev.map(j => j.jobId === jobId ? { ...j, status: newStatus as 'saved' } : j);
+      _cache.jobs = updated;
+      return updated;
+    });
   }
 
   async function handleDiscover() {
@@ -95,7 +189,11 @@ export default function JobsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Discovery failed');
       setDiscoverResult({ added: data.added, fetched: data.fetched });
-      if (data.added > 0) fetchJobs(false);
+      if (data.added > 0) {
+        // Refresh silently so new jobs appear at the top
+        const key = makeFiltersKey(keyword, c2c, workMode, sort, minRate, skills);
+        silentRefresh(key);
+      }
     } catch (err) {
       setDiscoverResult({ added: 0, fetched: 0, error: err instanceof Error ? err.message : 'Discovery failed' });
     } finally {
@@ -134,6 +232,23 @@ export default function JobsPage() {
           </Button>
         </div>
       </div>
+
+      {/* New-jobs toast — shown after silent background refresh finds additions */}
+      {newJobsCount > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-300 animate-slide-up">
+          <Bell className="h-4 w-4 shrink-0 text-emerald-400" />
+          <span className="flex-1">
+            <strong className="text-emerald-200">{newJobsCount} new job{newJobsCount !== 1 ? 's' : ''}</strong> added to the top of your list.
+          </span>
+          <button
+            onClick={() => setNewJobsCount(0)}
+            className="shrink-0 rounded-lg p-1 text-emerald-500 hover:text-emerald-300 transition"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Discovery result banner */}
       {discoverResult && (
@@ -185,7 +300,6 @@ export default function JobsPage() {
         {/* Filter panel */}
         {showFilters && (
           <div className="animate-slide-up grid grid-cols-2 gap-3 rounded-2xl border border-surface-border bg-surface-overlay p-4 sm:grid-cols-3 lg:grid-cols-5">
-            {/* C2C filter */}
             <div>
               <label className="label mb-1.5 block">C2C Status</label>
               <select
@@ -197,8 +311,6 @@ export default function JobsPage() {
                 {C2C_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-
-            {/* Work mode */}
             <div>
               <label className="label mb-1.5 block">Location</label>
               <select
@@ -210,8 +322,6 @@ export default function JobsPage() {
                 {WORK_MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-
-            {/* Sort */}
             <div>
               <label className="label mb-1.5 block">Sort by</label>
               <select
@@ -223,8 +333,6 @@ export default function JobsPage() {
                 {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-
-            {/* Min rate */}
             <div>
               <label className="label mb-1.5 block">Min Rate ($/hr)</label>
               <input
@@ -236,8 +344,6 @@ export default function JobsPage() {
                 aria-label="Minimum hourly rate filter"
               />
             </div>
-
-            {/* Skills */}
             <div>
               <label className="label mb-1.5 block">Skills (comma-separated)</label>
               <input
