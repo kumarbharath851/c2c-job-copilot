@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import {
   Briefcase, KanbanSquare, Sparkles, TrendingUp,
   AlarmClock, CheckCircle2, XCircle, Trophy,
-  ArrowRight, Plus, Bell, X,
+  ArrowRight, Plus, Bell, X, Send, MapPin, Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
@@ -67,6 +67,9 @@ function SkeletonCard() {
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
+  const [topPicks, setTopPicks] = useState<Job[]>([]);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [ingestUrl, setIngestUrl] = useState('');
   const [ingesting, setIngesting] = useState(false);
@@ -76,15 +79,23 @@ export default function DashboardPage() {
 
   const loadDashboard = useCallback(async () => {
     try {
-      const [jobsRes, appsRes] = await Promise.all([
+      const [jobsRes, appsRes, topRes] = await Promise.all([
         apiFetch('/api/jobs?limit=5&sort=ingestedAt'),
         apiFetch('/api/applications'),
+        apiFetch('/api/jobs?limit=12&sort=matchScore'),
       ]);
       const jobsData = await jobsRes.json();
       const appsData = await appsRes.json();
+      const topData = await topRes.json();
 
       const jobs: Job[] = jobsData.jobs || [];
       const apps: Application[] = appsData.applications || [];
+
+      // Top picks: C2C confirmed/likely jobs with highest match scores
+      const picks = ((topData.jobs || []) as Job[])
+        .filter(j => j.c2cStatus === 'confirmed' || j.c2cStatus === 'likely')
+        .slice(0, 4);
+      setTopPicks(picks);
 
       const newJobs = jobs.filter(j => j.status === 'new').length;
       const c2cConfirmed = jobs.filter(j => j.c2cStatus === 'confirmed' || j.c2cStatus === 'likely').length;
@@ -107,6 +118,7 @@ export default function DashboardPage() {
       });
       setRecentJobs(jobs.slice(0, 4));
     } catch {
+      setTopPicks([]);
       setMetrics({ newJobs: 14, totalJobs: 47, applied: 8, interviews: 3, offers: 1, avgMatchScore: 78, c2cConfirmed: 22 });
     } finally {
       setLoading(false);
@@ -180,6 +192,23 @@ export default function DashboardPage() {
     return 'Good evening';
   })();
 
+  async function handleQuickApply(job: Job) {
+    setApplyingId(job.jobId);
+    try {
+      const res = await apiFetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.jobId, status: 'Applied' }),
+      });
+      if (res.ok) {
+        setAppliedIds(prev => new Set([...prev, job.jobId]));
+        if (job.sourceUrl) window.open(job.sourceUrl, '_blank', 'noopener');
+      }
+    } catch { /* silent */ } finally {
+      setApplyingId(null);
+    }
+  }
+
   return (
     <div className="space-y-8 page-enter">
 
@@ -248,6 +277,82 @@ export default function DashboardPage() {
           ) : null}
         </div>
       </section>
+
+      {/* ── Top Picks ─────────────────────────────────────────────────────── */}
+      {(loading || topPicks.length > 0) && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="section-title flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-400" /> Top Picks for You
+            </h2>
+            <Link href="/jobs?c2c=confirmed" className="text-xs font-medium text-brand-light hover:underline">
+              View all C2C jobs →
+            </Link>
+          </div>
+          {loading ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-36 rounded-2xl skeleton" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {topPicks.map(job => {
+                const isApplied = appliedIds.has(job.jobId) || job.status === 'applied';
+                const isApplying = applyingId === job.jobId;
+                const rateLabel = job.rateMin && job.rateMax
+                  ? `$${job.rateMin}–$${job.rateMax}/hr`
+                  : job.rateMin ? `$${job.rateMin}+/hr` : null;
+                return (
+                  <div
+                    key={job.jobId}
+                    className="group rounded-2xl border border-emerald-500/20 bg-surface-raised p-4 transition hover:border-emerald-500/40 hover:shadow-raised"
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/jobs/${job.jobId}`} className="block">
+                          <p className="truncate text-sm font-bold text-slate-100 group-hover:text-emerald-300 transition-colors">
+                            {job.title}
+                          </p>
+                          <p className="truncate text-xs text-slate-400">{job.company}</p>
+                        </Link>
+                      </div>
+                      {job.score?.overall !== undefined && (
+                        <ScoreBadge score={job.score.overall} size="sm" />
+                      )}
+                    </div>
+                    <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                      <C2CBadge status={job.c2cStatus} size="xs" />
+                      {rateLabel && (
+                        <span className="text-[11px] font-medium text-emerald-400">{rateLabel}</span>
+                      )}
+                      <span className="flex items-center gap-1 text-[11px] text-slate-500">
+                        <MapPin className="h-3 w-3" />{job.location}
+                      </span>
+                    </div>
+                    {isApplied ? (
+                      <div className="flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Applied
+                      </div>
+                    ) : (
+                      <Button
+                        size="xs"
+                        variant="primary"
+                        className="w-full"
+                        leftIcon={<Send className="h-3 w-3" />}
+                        loading={isApplying}
+                        onClick={() => handleQuickApply(job)}
+                      >
+                        Quick Apply
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Quick ingest */}
       <section>
