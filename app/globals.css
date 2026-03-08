@@ -1,0 +1,130 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base tokens ──────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    --bg-base:        #07080f;
+    --bg-raised:      #0d0f1a;
+    --bg-overlay:     #131629;
+    --border:         #1e2333;
+    --brand:          #6366f1;
+    --brand-light:    #818cf8;
+    --text-primary:   #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted:     #64748b;
+  }
+
+  * {
+    box-sizing: border-box;
+    border-color: var(--border);
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100vh;
+    background: var(--bg-base);
+  }
+
+  ::selection {
+    background: rgba(99, 102, 241, 0.3);
+    color: #f1f5f9;
+  }
+
+  :focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1e2333; border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2d3249; }
+}
+
+/* ── Component utilities ──────────────────────────────────────────────────── */
+@layer components {
+
+  /* Cards */
+  .card {
+    @apply rounded-2xl border border-surface-border bg-surface-raised p-5 shadow-card;
+  }
+
+  .card-overlay {
+    @apply rounded-2xl border border-surface-border bg-surface-overlay p-5 shadow-raised;
+  }
+
+  /* Inputs */
+  .input {
+    @apply w-full rounded-xl border border-surface-border bg-surface-overlay px-3.5 py-2.5
+           text-sm text-slate-100 placeholder:text-slate-500
+           focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20
+           transition-colors;
+  }
+
+  /* Label */
+  .label {
+    @apply text-xs font-semibold uppercase tracking-widest text-slate-400;
+  }
+
+  /* Section heading */
+  .section-title {
+    @apply text-lg font-bold text-slate-100;
+  }
+
+  /* Stat card */
+  .stat-card {
+    @apply card flex flex-col gap-1.5;
+  }
+
+  /* Glow text */
+  .text-glow {
+    text-shadow: 0 0 24px rgba(99,102,241,0.5);
+  }
+
+  /* Shimmer loading skeleton */
+  .skeleton {
+    @apply animate-shimmer rounded-lg bg-gradient-to-r from-surface-border via-surface-overlay to-surface-border bg-[length:200%_100%];
+  }
+}
+
+/* ── Score gradient ───────────────────────────────────────────────────────── */
+.score-excellent { color: #10b981; }
+.score-good      { color: #6366f1; }
+.score-fair      { color: #f59e0b; }
+.score-poor      { color: #ef4444; }
+
+/* ── Kanban column scrolling ─────────────────────────────────────────────── */
+.kanban-column {
+  @apply flex flex-col gap-3 min-h-[200px] rounded-2xl border border-surface-border
+         bg-surface-raised p-3 pr-1 overflow-y-auto;
+  max-height: calc(100vh - 220px);
+  scrollbar-width: thin;
+}
+
+/* ── Diff viewer ──────────────────────────────────────────────────────────── */
+.diff-added    { @apply bg-emerald-500/10 text-emerald-300; }
+.diff-removed  { @apply bg-red-500/10 text-red-400 line-through; }
+.diff-neutral  { @apply text-slate-400; }
+
+/* ── Badge variants ───────────────────────────────────────────────────────── */
+.badge-c2c-confirmed { @apply bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30; }
+.badge-c2c-likely    { @apply bg-indigo-500/15 text-indigo-400 ring-1 ring-indigo-500/30; }
+.badge-c2c-unclear   { @apply bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30; }
+.badge-c2c-w2only    { @apply bg-red-500/15 text-red-400 ring-1 ring-red-500/30; }
+
+/* ── Page transitions ─────────────────────────────────────────────────────── */
+.page-enter {
+  animation: slideUp 0.18s ease-out;
+}
