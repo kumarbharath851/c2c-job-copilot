@@ -73,9 +73,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File size must be under 10MB' }, { status: 400 });
     }
 
-    // Read text content (real implementation would use pdf-parse or mammoth)
-    const arrayBuffer = await file.arrayBuffer();
-    const rawText = new TextDecoder('utf-8', { fatal: false }).decode(arrayBuffer);
+    // Extract plain text from uploaded file using appropriate parser
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let rawText: string;
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.endsWith('.pdf')) {
+      // pdf-parse reads PDF binary and returns the text layer
+      const pdfParse = (await import('pdf-parse')).default;
+      const pdfData = await pdfParse(buffer);
+      rawText = pdfData.text;
+    } else if (lowerName.endsWith('.docx')) {
+      // mammoth strips OOXML markup and returns clean prose
+      const mammoth = await import('mammoth');
+      const result = await mammoth.extractRawText({ buffer });
+      rawText = result.value;
+    } else {
+      // Plain .txt — safe to decode directly
+      rawText = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+    }
 
     const resumeId = `res-${uuidv4().split('-')[0]}`;
     const now = new Date().toISOString();
