@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { dbPut, dbQuery } from '@/lib/dynamo/client';
 import type { Resume, ParsedResume } from '@/lib/types/resume';
 
-const getUserId = (req: NextRequest) => req.headers.get('x-user-id') || 'demo-user';
+const getUserId = (req: NextRequest): string | null => req.headers.get('x-user-id');
 
 // Lightweight plain-text resume parser (no AI — pure regex-based section detection)
 function parseResumeText(text: string): ParsedResume {
@@ -56,6 +56,7 @@ function parseResumeText(text: string): ParsedResume {
 export async function POST(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
 
@@ -85,11 +86,6 @@ export async function POST(request: NextRequest) {
     // Determine existing master flag
     const existingResumes = await dbQuery<Resume>(`USER#${userId}`, { skPrefix: 'RESUME#' });
     const isMaster = existingResumes.length === 0;
-
-    // Mark previous masters as non-master if this is first
-    if (isMaster && existingResumes.length > 0) {
-      // Would update previous master records — skipped for MVP simplicity
-    }
 
     const resume: Resume & { PK: string; SK: string } = {
       PK: `USER#${userId}`,
@@ -132,6 +128,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const resumes = await dbQuery<Resume>(`USER#${userId}`, { skPrefix: 'RESUME#' });
 
     return NextResponse.json({

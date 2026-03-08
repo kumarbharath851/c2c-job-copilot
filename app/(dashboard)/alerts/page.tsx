@@ -38,6 +38,7 @@ export default function AlertsPage() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create alert');
       setAlerts(prev => [data, ...prev]);
       setShowForm(false);
       setForm({ name: '', keyword: '', c2cFilter: 'any', workMode: 'any', skills: '', minRate: '', emailDigest: false, digestFrequency: 'daily' });
@@ -49,8 +50,14 @@ export default function AlertsPage() {
   }
 
   async function handleDelete(alertId: string) {
+    const removed = alerts.find(a => a.alertId === alertId);
     setAlerts(prev => prev.filter(a => a.alertId !== alertId));
-    await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' }).catch(() => {});
+    try {
+      const res = await fetch(`/api/alerts/${alertId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+    } catch {
+      if (removed) setAlerts(prev => [...prev, removed]);
+    }
   }
 
   return (

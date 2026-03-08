@@ -87,15 +87,28 @@ export default function ResumePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Tailoring failed');
 
-      // Poll for completion
+      // Poll for completion — max 30 attempts (60 s)
+      let retries = 0;
+      const MAX_RETRIES = 30;
+
       const poll = async () => {
-        const pollRes = await fetch(`/api/resumes/${data.tailoredResumeId}/tailor`);
-        const pollData: TailoredResume = await pollRes.json();
-        if (pollData.status === 'generating') {
-          setTimeout(poll, 2000);
-        } else {
-          setTailoredResume(pollData);
+        retries += 1;
+        if (retries > MAX_RETRIES) {
+          setTailoredResume(prev => prev ? { ...prev, status: 'error' } : null);
           setTailoring(false);
+          return;
+        }
+        try {
+          const pollRes = await fetch(`/api/resumes/${data.tailoredResumeId}/tailor`);
+          const pollData: TailoredResume = await pollRes.json();
+          if (pollData.status === 'generating') {
+            setTimeout(poll, 2000);
+          } else {
+            setTailoredResume(pollData);
+            setTailoring(false);
+          }
+        } catch {
+          setTimeout(poll, 2000);
         }
       };
 

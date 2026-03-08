@@ -34,7 +34,7 @@ export const docClient = DynamoDBDocumentClient.from(client, {
   marshallOptions: { removeUndefinedValues: true },
 });
 
-export const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'c2c-job-copilot';
+export const TABLE_NAME = process.env.DYNAMODB_TABLE || 'c2c-job-copilot';
 
 // ── Helper wrappers ────────────────────────────────────────────────────────
 

@@ -10,7 +10,7 @@ import { buildJobScoringPrompt } from '@/lib/ai/prompts/resume-tailor';
 import type { Job, JobScore } from '@/lib/types/job';
 import type { Resume } from '@/lib/types/resume';
 
-const getUserId = (req: NextRequest) => req.headers.get('x-user-id') || 'demo-user';
+const getUserId = (req: NextRequest): string | null => req.headers.get('x-user-id');
 
 export async function POST(
   request: NextRequest,
@@ -18,6 +18,7 @@ export async function POST(
 ) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const body = await request.json();
 
     const validation = ScoreJobSchema.safeParse(body);

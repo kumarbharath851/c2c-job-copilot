@@ -10,11 +10,12 @@ import { dbPut, dbQuery, dbGet } from '@/lib/dynamo/client';
 import type { Application } from '@/lib/types/application';
 import type { Job } from '@/lib/types/job';
 
-const getUserId = (req: NextRequest) => req.headers.get('x-user-id') || 'demo-user';
+const getUserId = (req: NextRequest): string | null => req.headers.get('x-user-id');
 
 export async function POST(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const body = await request.json();
 
     const validation = CreateApplicationSchema.safeParse(body);
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const { searchParams } = new URL(request.url);
     const statusFilter = searchParams.get('status');
 

@@ -10,7 +10,7 @@ import type { Application } from '@/lib/types/application';
 import type { Resume, TailoredResume } from '@/lib/types/resume';
 import type { Job } from '@/lib/types/job';
 
-const getUserId = (req: NextRequest) => req.headers.get('x-user-id') || 'demo-user';
+const getUserId = (req: NextRequest): string | null => req.headers.get('x-user-id');
 
 /**
  * GET — Returns ATS score already stored on the application (or its tailored resume).
@@ -21,6 +21,7 @@ export async function GET(
   { params }: { params: { appId: string } }
 ) {
   const userId = getUserId(request);
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const app = await dbGet<Application>(`USER#${userId}`, `APP#${params.appId}`);
   if (!app) return NextResponse.json({ error: 'Application not found' }, { status: 404 });
 
@@ -76,6 +77,7 @@ export async function POST(
 ) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const app = await dbGet<Application>(`USER#${userId}`, `APP#${params.appId}`);
     if (!app) return NextResponse.json({ error: 'Application not found' }, { status: 404 });
 

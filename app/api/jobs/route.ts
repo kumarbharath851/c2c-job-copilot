@@ -11,8 +11,8 @@ import { parseJobDescription, buildFingerprint } from '@/lib/ingestion/parser';
 import { dbPut, dbQuery, TABLE_NAME } from '@/lib/dynamo/client';
 import type { Job } from '@/lib/types/job';
 
-const getUserId = (request: NextRequest) =>
-  request.headers.get('x-user-id') || 'demo-user'; // Replace with NextAuth session
+const getUserId = (request: NextRequest): string | null =>
+  request.headers.get('x-user-id');
 
 // ── POST /api/jobs/ingest ──────────────────────────────────────────────────
 
@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
 
     const { url, rawText, title, company, location } = validation.data;
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     let resolvedText = rawText || '';
 
@@ -133,6 +134,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const filters = JobFiltersSchema.parse(Object.fromEntries(searchParams));
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     let jobs = await dbQuery<Job>(`USER#${userId}`, { skPrefix: 'JOB#' });
 
@@ -174,7 +176,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Pagination
-    const start = filters.cursor ? parseInt(atob(filters.cursor)) : 0;
+    let start = 0;
+    if (filters.cursor) {
+      try {
+        const decoded = parseInt(atob(filters.cursor), 10);
+        start = Number.isFinite(decoded) && decoded >= 0 ? decoded : 0;
+      } catch {
+        // Invalid cursor — treat as start of list
+      }
+    }
     const paginated = jobs.slice(start, start + filters.limit);
     const nextCursor = start + filters.limit < jobs.length
       ? btoa(String(start + filters.limit))

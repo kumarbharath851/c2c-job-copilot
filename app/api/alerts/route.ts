@@ -10,11 +10,12 @@ import { CreateAlertSchema } from '@/lib/schemas';
 import { dbPut, dbQuery } from '@/lib/dynamo/client';
 import type { JobAlert } from '@/lib/types/application';
 
-const getUserId = (req: NextRequest) => req.headers.get('x-user-id') || 'demo-user';
+const getUserId = (req: NextRequest): string | null => req.headers.get('x-user-id');
 
 export async function POST(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const body = await request.json();
 
     const validation = CreateAlertSchema.safeParse(body);
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const alerts = await dbQuery<JobAlert>(`USER#${userId}`, { skPrefix: 'ALERT#' });
     return NextResponse.json({ alerts, total: alerts.length });
   } catch (err) {

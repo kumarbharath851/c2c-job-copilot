@@ -253,7 +253,7 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
       <div className="space-y-3">
         {sections.map((section, i) => (
           <DiffSection
-            key={i}
+            key={`${section.sectionName}-${i}`}
             section={section}
             index={i}
             onAccept={handleAccept}

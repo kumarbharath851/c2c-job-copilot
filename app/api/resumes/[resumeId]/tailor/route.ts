@@ -13,7 +13,7 @@ import { computeATSScore } from '@/lib/ai/scoring';
 import type { Resume, TailoredResume } from '@/lib/types/resume';
 import type { Job } from '@/lib/types/job';
 
-const getUserId = (req: NextRequest) => req.headers.get('x-user-id') || 'demo-user';
+const getUserId = (req: NextRequest): string | null => req.headers.get('x-user-id');
 
 export async function POST(
   request: NextRequest,
@@ -21,6 +21,7 @@ export async function POST(
 ) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const body = await request.json();
 
     const validation = TailorResumeSchema.safeParse(body);
@@ -88,6 +89,7 @@ export async function GET(
   { params }: { params: { resumeId: string } }
 ) {
   const userId = getUserId(request);
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   // params.resumeId acts as tailoredResumeId for GET polling
   const tailored = await dbGet<TailoredResume>(`USER#${userId}`, `TAILORED#${params.resumeId}`);
   if (!tailored) return NextResponse.json({ error: 'Not found' }, { status: 404 });

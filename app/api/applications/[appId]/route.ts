@@ -10,13 +10,14 @@ import { UpdateApplicationSchema } from '@/lib/schemas';
 import { dbGet, dbUpdate, dbDelete } from '@/lib/dynamo/client';
 import type { Application } from '@/lib/types/application';
 
-const getUserId = (req: NextRequest) => req.headers.get('x-user-id') || 'demo-user';
+const getUserId = (req: NextRequest): string | null => req.headers.get('x-user-id');
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { appId: string } }
 ) {
   const userId = getUserId(request);
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const app = await dbGet<Application>(`USER#${userId}`, `APP#${params.appId}`);
   if (!app) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(app);
@@ -28,6 +29,7 @@ export async function PATCH(
 ) {
   try {
     const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const body = await request.json();
 
     const validation = UpdateApplicationSchema.safeParse(body);
@@ -77,6 +79,7 @@ export async function DELETE(
   { params }: { params: { appId: string } }
 ) {
   const userId = getUserId(request);
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   await dbDelete(`USER#${userId}`, `APP#${params.appId}`);
   return NextResponse.json({ deleted: true });
 }

@@ -8,7 +8,8 @@ const bedrockClient = new BedrockRuntimeClient({
   region: process.env.AWS_REGION || 'us-east-1',
 });
 
-export const CLAUDE_MODEL_ID = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+export const CLAUDE_MODEL_ID =
+  process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-sonnet-20241022-v2:0';
 
 export interface BedrockMessage {
   role: 'user' | 'assistant';
