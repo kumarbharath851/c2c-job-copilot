@@ -3,10 +3,15 @@
  * Fetches Data Engineer jobs from free public job board APIs,
  * runs C2C classification + skill parsing, and stores new listings.
  *
- * Sources:
- *   - RemoteOK  (https://remoteok.com/api — no auth required)
- *   - Arbeitnow (https://arbeitnow.com/api/job-board-api — no auth required)
- *   - Remotive   (https://remotive.com/api/remote-jobs — no auth required)
+ * Sources (all free, no API key required):
+ *   - RemoteOK  (remoteok.com/api)
+ *   - Arbeitnow (arbeitnow.com/api/job-board-api)
+ *   - Remotive  (remotive.com/api/remote-jobs)
+ *   - Jobicy    (jobicy.com/api/v0/remote-jobs)
+ *   - The Muse  (themuse.com/api/public/jobs)
+ *
+ * NOTE: Dice, Indeed, LinkedIn, Monster have no public API — scraping their
+ * HTML violates their ToS. These 5 sources are the full set of free public APIs.
  *
  * Only Data Engineering roles from the USA (or remote) are kept.
  * Contract vs W2 classification is handled post-ingestion by the C2C classifier.
@@ -255,23 +260,92 @@ async function fetchRemotive(): Promise<RawJob[]> {
     .filter((j: RawJob) => isDataEngineeringRole(j.title, j.description) && isUSOrRemote(j.location));
 }
 
+// ── Jobicy ─────────────────────────────────────────────────────────────────
+async function fetchJobicy(): Promise<RawJob[]> {
+  const res = await fetch(
+    'https://jobicy.com/api/v0/remote-jobs?count=50&tag=data-engineer',
+    { signal: AbortSignal.timeout(12000) }
+  );
+  if (!res.ok) throw new Error(`Jobicy ${res.status}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data: { jobs?: any[] } = await res.json();
+  return (data.jobs || [])
+    .filter((j: { jobTitle?: string; companyName?: string }) => j.jobTitle && j.companyName)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((j: any) => ({
+      title:       j.jobTitle    || 'Data Engineer',
+      company:     j.companyName || 'Unknown',
+      location:    j.jobGeo      || 'Remote',
+      description: [j.jobTitle, j.companyName, j.jobGeo, j.jobExcerpt].filter(Boolean).join('\n'),
+      url:         j.url         || '',
+      source:      'Jobicy',
+    }))
+    .filter((j: RawJob) => isDataEngineeringRole(j.title, j.description) && isUSOrRemote(j.location));
+}
+
+// ── The Muse ───────────────────────────────────────────────────────────────
+async function fetchTheMuse(): Promise<RawJob[]> {
+  // Fetch Data Science and Software Engineering categories — free public API
+  const [dsRes, seRes] = await Promise.allSettled([
+    fetch('https://www.themuse.com/api/public/jobs?category=Data+Science&page=0&descending=true', {
+      signal: AbortSignal.timeout(12000),
+    }),
+    fetch('https://www.themuse.com/api/public/jobs?category=Data+and+Analytics&page=0&descending=true', {
+      signal: AbortSignal.timeout(12000),
+    }),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const extractJobs = async (res: Response): Promise<any[]> => {
+    if (!res.ok) return [];
+    const data: { results?: unknown[] } = await res.json();
+    return data.results || [];
+  };
+
+  const jobs: unknown[] = [];
+  if (dsRes.status === 'fulfilled') jobs.push(...await extractJobs(dsRes.value));
+  if (seRes.status === 'fulfilled') jobs.push(...await extractJobs(seRes.value));
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (jobs as any[])
+    .filter((j: { name?: string; company?: { name?: string } }) => j.name && j.company?.name)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((j: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const locationStr = (j.locations as any[] | undefined)?.map((l: any) => l.name).join(', ') || 'Remote';
+      return {
+        title:       j.name             || 'Data Engineer',
+        company:     j.company?.name    || 'Unknown',
+        location:    locationStr,
+        description: [j.name, j.company?.name, locationStr, j.contents].filter(Boolean).join('\n'),
+        url:         j.refs?.landing_page || '',
+        source:      'The Muse',
+      };
+    })
+    .filter((j: RawJob) => isDataEngineeringRole(j.title, j.description) && isUSOrRemote(j.location));
+}
+
 // ── POST handler ───────────────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
     const userId = getUserId(request);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Fetch from all 3 sources in parallel (don't fail if one is down)
-    const [remoteOkResult, arbeitnowResult, remotiveResult] = await Promise.allSettled([
+    // Fetch from all 5 sources in parallel (don't fail if one is down)
+    const [remoteOkResult, arbeitnowResult, remotiveResult, jobicyResult, theMuseResult] = await Promise.allSettled([
       fetchRemoteOK(),
       fetchArbeitnow(),
       fetchRemotive(),
+      fetchJobicy(),
+      fetchTheMuse(),
     ]);
 
     const allRaw: RawJob[] = [
       ...(remoteOkResult.status   === 'fulfilled' ? remoteOkResult.value   : []),
       ...(arbeitnowResult.status  === 'fulfilled' ? arbeitnowResult.value  : []),
       ...(remotiveResult.status   === 'fulfilled' ? remotiveResult.value   : []),
+      ...(jobicyResult.status     === 'fulfilled' ? jobicyResult.value     : []),
+      ...(theMuseResult.status    === 'fulfilled' ? theMuseResult.value    : []),
     ];
 
     const sourceStatus = {
@@ -284,6 +358,12 @@ export async function POST(request: NextRequest) {
       remotive:  remotiveResult.status  === 'fulfilled'
         ? remotiveResult.value.length
         : (remotiveResult.reason instanceof Error ? remotiveResult.reason.message : 'error'),
+      jobicy:    jobicyResult.status    === 'fulfilled'
+        ? jobicyResult.value.length
+        : (jobicyResult.reason instanceof Error ? jobicyResult.reason.message : 'error'),
+      themuse:   theMuseResult.status   === 'fulfilled'
+        ? theMuseResult.value.length
+        : (theMuseResult.reason instanceof Error ? theMuseResult.reason.message : 'error'),
     };
 
     // Load existing fingerprints to avoid duplicates
