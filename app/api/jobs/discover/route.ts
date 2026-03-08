@@ -7,7 +7,7 @@
  *   - RemoteOK  (https://remoteok.com/api — no auth required)
  *   - Arbeitnow (https://arbeitnow.com/api/job-board-api — no auth required)
  *
- * Only Data Engineering roles are kept (filtered by keyword matching).
+ * Only Data Engineering roles from the USA (or remote) are kept.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -68,6 +68,52 @@ function isDataEngineeringRole(title: string, description: string): boolean {
   return DE_KEYWORDS.some(kw => text.includes(kw));
 }
 
+// ── USA / Remote location filter ───────────────────────────────────────────
+
+// US state abbreviations and names used in location strings
+const US_STATE_ABBR = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY','DC',
+];
+
+const US_PATTERNS = [
+  'united states',
+  'usa',
+  'u.s.a',
+  'u.s.',
+  ' us ',
+  ', us',
+  'us-',
+  'america',
+  'remote', // remote-first platforms like RemoteOK are US-centric
+  'anywhere',
+];
+
+function isUSOrRemote(location: string): boolean {
+  if (!location) return false;
+  const loc = location.toLowerCase().trim();
+
+  // Check plain-text patterns
+  if (US_PATTERNS.some(p => loc.includes(p))) return true;
+
+  // Check ", XX" or "XX," state abbreviation patterns
+  for (const abbr of US_STATE_ABBR) {
+    const lower = abbr.toLowerCase();
+    if (
+      loc.endsWith(`, ${lower}`) ||
+      loc.startsWith(`${lower},`) ||
+      loc === lower ||
+      loc.includes(`, ${lower},`) ||
+      // e.g. "New York, NY" or "Austin, TX"
+      new RegExp(`\\b${lower}\\b`).test(loc)
+    ) return true;
+  }
+
+  return false;
+}
+
 // ── RemoteOK ───────────────────────────────────────────────────────────────
 async function fetchRemoteOK(): Promise<RawJob[]> {
   const res = await fetch(
@@ -94,7 +140,7 @@ async function fetchRemoteOK(): Promise<RawJob[]> {
       url:         j.url        || `https://remoteok.com/remote-jobs/${j.id}`,
       source:      'RemoteOK',
     }))
-    .filter(j => isDataEngineeringRole(j.title, j.description));
+    .filter(j => isDataEngineeringRole(j.title, j.description) && isUSOrRemote(j.location));
 }
 
 // ── Arbeitnow ──────────────────────────────────────────────────────────────
@@ -117,7 +163,7 @@ async function fetchArbeitnowPage(page: number): Promise<RawJob[]> {
       url:         j.url          || '',
       source:      'Arbeitnow',
     }))
-    .filter((j: RawJob) => isDataEngineeringRole(j.title, j.description));
+    .filter((j: RawJob) => isDataEngineeringRole(j.title, j.description) && isUSOrRemote(j.location));
 }
 
 async function fetchArbeitnow(): Promise<RawJob[]> {
