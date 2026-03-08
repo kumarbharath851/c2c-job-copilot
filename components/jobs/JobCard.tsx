@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { MapPin, Clock, ExternalLink, Sparkles, ChevronRight, Building2 } from 'lucide-react';
+import { MapPin, Clock, ExternalLink, Sparkles, ChevronRight, Building2, Send, CheckCircle2 } from 'lucide-react';
 import type { Job } from '@/lib/types/job';
 import { C2CBadge, RateBadge, ScoreBadge, SkillPill } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { apiFetch } from '@/lib/api';
 
 interface JobCardProps {
   job: Job;
@@ -25,6 +26,26 @@ export function JobCard({
   compact = false,
 }: JobCardProps) {
   const [saved, setSaved] = useState(job.status !== 'new');
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState(job.status === 'applied');
+
+  async function handleApply() {
+    setApplying(true);
+    try {
+      const res = await apiFetch('/api/applications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.jobId, status: 'Applied' }),
+      });
+      if (res.ok) {
+        setApplied(true);
+        onApply?.(job.jobId);
+        if (job.sourceUrl) window.open(job.sourceUrl, '_blank', 'noopener');
+      }
+    } catch { /* silent fail */ } finally {
+      setApplying(false);
+    }
+  }
 
   const topSkills = job.requiredSkills.slice(0, compact ? 3 : 5);
   const extraCount = job.requiredSkills.length - topSkills.length;
@@ -136,17 +157,32 @@ export function JobCard({
 
       {/* Actions */}
       <div className="mt-4 flex items-center gap-2 border-t border-surface-border pt-3">
-        <Button
-          size="xs"
-          variant="primary"
-          leftIcon={<Sparkles className="h-3 w-3" />}
-          onClick={() => onTailor?.(job.jobId)}
-        >
-          Tailor Resume
-        </Button>
+        {applied ? (
+          <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-400">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Applied
+          </span>
+        ) : (
+          <Button
+            size="xs"
+            variant="primary"
+            leftIcon={<Send className="h-3 w-3" />}
+            loading={applying}
+            onClick={handleApply}
+          >
+            Apply
+          </Button>
+        )}
         <Button
           size="xs"
           variant="secondary"
+          leftIcon={<Sparkles className="h-3 w-3" />}
+          onClick={() => onTailor?.(job.jobId)}
+        >
+          Tailor
+        </Button>
+        <Button
+          size="xs"
+          variant="ghost"
           onClick={() => {
             setSaved(true);
             onSave?.(job.jobId);
