@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
 import { Check, X, AlertTriangle, Info, ChevronDown, ChevronUp, Copy, Download } from 'lucide-react';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import type { TailoredResume, ResumeDiffSection, ChangeType } from '@/lib/types/resume';
 import { Button } from '@/components/ui/Button';
 import { ATSScoreComparison, ATSScoreBadge } from '@/components/ui/ATSScoreBadge';
@@ -138,27 +139,21 @@ interface ResumeDiffViewerProps {
   onSaveAccepted?: () => void;
 }
 
-function buildExportText(sections: ResumeDiffSection[], jobId: string): string {
+function buildCopyText(sections: ResumeDiffSection[], jobId: string): string {
   const lines: string[] = [
-    '══════════════════════════════════════════════',
-    '         TAILORED RESUME — ACCEPTED CHANGES',
-    `         Job: ${jobId}`,
-    `         Generated: ${new Date().toLocaleString()}`,
-    '══════════════════════════════════════════════',
+    'TAILORED RESUME — ACCEPTED CHANGES',
+    `Job: ${jobId}  |  Generated: ${new Date().toLocaleString()}`,
     '',
-    'Apply the sections below to your resume document.',
-    'Accepted changes use the AI-tailored wording.',
-    'Rejected or pending sections retain the original.',
+    'Paste the sections below into your resume document.',
+    '─'.repeat(50),
     '',
   ];
-
   sections.forEach(s => {
-    const useAI = s.accepted !== false; // accepted or pending → use tailored
+    const useAI = s.accepted !== false;
     const content = useAI ? s.tailored : s.original;
     const contentStr = Array.isArray(content) ? content.join('\n  • ') : content;
-    const status = s.accepted === true ? '[Accepted]' : s.accepted === false ? '[Rejected — original kept]' : '[Pending — AI version used]';
-
-    lines.push(`── ${s.sectionName.replace(/_/g, ' ').toUpperCase()} ${status}`);
+    const status = s.accepted === true ? '[Accepted]' : s.accepted === false ? '[Rejected — original kept]' : '[Pending — AI version shown]';
+    lines.push(`${s.sectionName.replace(/_/g, ' ').toUpperCase()}  ${status}`);
     if (Array.isArray(content) && content.length > 1) {
       lines.push(`  • ${contentStr}`);
     } else {
@@ -166,10 +161,88 @@ function buildExportText(sections: ResumeDiffSection[], jobId: string): string {
     }
     lines.push('');
   });
-
-  lines.push('══════════════════════════════════════════════');
-  lines.push('Review each section and paste into your resume editor.');
   return lines.join('\n');
+}
+
+async function buildExportDocx(sections: ResumeDiffSection[], jobId: string): Promise<Blob> {
+  const children: Paragraph[] = [];
+
+  // Title
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'Tailored Resume — Accepted Changes', bold: true, size: 28, color: '1e293b' })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 100 },
+  }));
+  children.push(new Paragraph({
+    children: [
+      new TextRun({ text: `Job ID: ${jobId}`, size: 18, color: '64748b' }),
+      new TextRun({ text: `     Generated: ${new Date().toLocaleString()}`, size: 18, color: '64748b' }),
+    ],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 300 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'Apply the sections below to your resume document. Accepted changes use the AI-tailored version.', italics: true, size: 18, color: '475569' })],
+    spacing: { after: 400 },
+  }));
+
+  // Sections
+  sections.forEach(s => {
+    const useAI = s.accepted !== false;
+    const content = useAI ? s.tailored : s.original;
+    const statusLabel = s.accepted === true ? '✓ Accepted' : s.accepted === false ? '✗ Rejected — original kept' : '⏳ Pending — AI version used';
+    const statusColor = s.accepted === true ? '16a34a' : s.accepted === false ? 'dc2626' : 'd97706';
+    const sectionLabel = s.sectionName.replace(/_/g, ' ');
+
+    // Section heading row
+    children.push(new Paragraph({
+      children: [
+        new TextRun({ text: sectionLabel.toUpperCase(), bold: true, size: 22 }),
+        new TextRun({ text: `   ${statusLabel}`, size: 18, color: statusColor }),
+      ],
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 300, after: 100 },
+    }));
+
+    // Change type label
+    children.push(new Paragraph({
+      children: [new TextRun({ text: `Change type: ${CHANGE_LABELS[s.changeType] || s.changeType}`, italics: true, size: 16, color: '64748b' })],
+      spacing: { after: 120 },
+    }));
+
+    // Content
+    const contentItems = Array.isArray(content) ? content : [content];
+    contentItems.forEach(item => {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: item, size: 20 })],
+        indent: { left: 360 },
+        spacing: { after: 80 },
+        bullet: contentItems.length > 1 ? { level: 0 } : undefined,
+      }));
+    });
+
+    // AI explanation
+    if (s.explanation) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `AI: ${s.explanation}`, size: 16, italics: true, color: '94a3b8' })],
+        indent: { left: 360 },
+        spacing: { after: 200 },
+      }));
+    }
+  });
+
+  const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Calibri', size: 20 },
+        },
+      },
+    },
+    sections: [{ children }],
+  });
+
+  return Packer.toBlob(doc);
 }
 
 export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffViewerProps) {
@@ -188,19 +261,19 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
   const rejectAll = () => setSections(prev => prev.map(s => ({ ...s, accepted: false })));
 
   function handleExport() {
-    const text = buildExportText(sections, tailoredResume.jobId);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `tailored-resume-${tailoredResume.jobId}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    onSaveAccepted?.();
+    buildExportDocx(sections, tailoredResume.jobId).then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tailored-resume-${tailoredResume.jobId}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onSaveAccepted?.();
+    });
   }
 
   function handleCopy() {
-    const text = buildExportText(sections, tailoredResume.jobId);
+    const text = buildCopyText(sections, tailoredResume.jobId);
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -266,7 +339,7 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
             leftIcon={<Download className="h-3 w-3" />}
             onClick={handleExport}
           >
-            Export .txt
+            Export .docx
           </Button>
         </div>
       </div>
