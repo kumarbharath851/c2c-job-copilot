@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Check, X, AlertTriangle, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, X, AlertTriangle, Info, ChevronDown, ChevronUp, Copy, Download } from 'lucide-react';
 import type { TailoredResume, ResumeDiffSection, ChangeType } from '@/lib/types/resume';
 import { Button } from '@/components/ui/Button';
 import { ATSScoreComparison, ATSScoreBadge } from '@/components/ui/ATSScoreBadge';
@@ -138,8 +138,43 @@ interface ResumeDiffViewerProps {
   onSaveAccepted?: () => void;
 }
 
+function buildExportText(sections: ResumeDiffSection[], jobId: string): string {
+  const lines: string[] = [
+    '══════════════════════════════════════════════',
+    '         TAILORED RESUME — ACCEPTED CHANGES',
+    `         Job: ${jobId}`,
+    `         Generated: ${new Date().toLocaleString()}`,
+    '══════════════════════════════════════════════',
+    '',
+    'Apply the sections below to your resume document.',
+    'Accepted changes use the AI-tailored wording.',
+    'Rejected or pending sections retain the original.',
+    '',
+  ];
+
+  sections.forEach(s => {
+    const useAI = s.accepted !== false; // accepted or pending → use tailored
+    const content = useAI ? s.tailored : s.original;
+    const contentStr = Array.isArray(content) ? content.join('\n  • ') : content;
+    const status = s.accepted === true ? '[Accepted]' : s.accepted === false ? '[Rejected — original kept]' : '[Pending — AI version used]';
+
+    lines.push(`── ${s.sectionName.replace(/_/g, ' ').toUpperCase()} ${status}`);
+    if (Array.isArray(content) && content.length > 1) {
+      lines.push(`  • ${contentStr}`);
+    } else {
+      lines.push(`  ${contentStr}`);
+    }
+    lines.push('');
+  });
+
+  lines.push('══════════════════════════════════════════════');
+  lines.push('Review each section and paste into your resume editor.');
+  return lines.join('\n');
+}
+
 export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffViewerProps) {
   const [sections, setSections] = useState<ResumeDiffSection[]>(tailoredResume.diff);
+  const [copied, setCopied] = useState(false);
 
   const handleAccept = (index: number) => {
     setSections(prev => prev.map((s, i) => i === index ? { ...s, accepted: true } : s));
@@ -151,6 +186,25 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
 
   const acceptAll = () => setSections(prev => prev.map(s => ({ ...s, accepted: true })));
   const rejectAll = () => setSections(prev => prev.map(s => ({ ...s, accepted: false })));
+
+  function handleExport() {
+    const text = buildExportText(sections, tailoredResume.jobId);
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tailored-resume-${tailoredResume.jobId}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onSaveAccepted?.();
+  }
+
+  function handleCopy() {
+    const text = buildExportText(sections, tailoredResume.jobId);
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   const acceptedCount = sections.filter(s => s.accepted === true).length;
   const pendingCount = sections.filter(s => s.accepted === null || s.accepted === undefined).length;
@@ -200,11 +254,19 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
           <Button size="xs" variant="success" onClick={acceptAll}>Accept All</Button>
           <Button
             size="xs"
-            variant="primary"
-            onClick={onSaveAccepted}
-            disabled={pendingCount > 0}
+            variant="ghost"
+            leftIcon={copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+            onClick={handleCopy}
           >
-            Save & Export
+            {copied ? 'Copied!' : 'Copy'}
+          </Button>
+          <Button
+            size="xs"
+            variant="primary"
+            leftIcon={<Download className="h-3 w-3" />}
+            onClick={handleExport}
+          >
+            Export .txt
           </Button>
         </div>
       </div>

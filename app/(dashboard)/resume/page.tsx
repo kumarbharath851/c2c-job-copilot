@@ -247,7 +247,7 @@ export default function ResumePage() {
           {saveSuccess && (
             <div className="flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/8 px-3 py-2.5 text-xs text-emerald-400">
               <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Changes accepted. Export functionality coming soon — copy the tailored text above.
+              Resume exported successfully. Check your downloads folder.
             </div>
           )}
           {tailoredResume ? (
