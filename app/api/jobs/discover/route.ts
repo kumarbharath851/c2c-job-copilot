@@ -6,8 +6,10 @@
  * Sources:
  *   - RemoteOK  (https://remoteok.com/api — no auth required)
  *   - Arbeitnow (https://arbeitnow.com/api/job-board-api — no auth required)
+ *   - Remotive   (https://remotive.com/api/remote-jobs — no auth required)
  *
  * Only Data Engineering roles from the USA (or remote) are kept.
+ * Contract vs W2 classification is handled post-ingestion by the C2C classifier.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -29,48 +31,82 @@ interface RawJob {
 }
 
 // ── Data Engineering keyword filter ────────────────────────────────────────
+// Covers a wide range of contract Data Engineering role titles / skills.
+// Title match is sufficient — role variety titles are in the first group;
+// technology keywords in the second group catch JDs that don't say "engineer".
 
-const DE_KEYWORDS = [
+const DE_TITLE_KEYWORDS = [
+  // Core role names
   'data engineer',
   'data engineering',
+  'analytics engineer',
+  'pipeline engineer',
+  'platform engineer',
+  'data platform',
+  'data infrastructure',
+  'etl developer',
+  'etl engineer',
+  'elt engineer',
+  'data integration engineer',
+  'data integration developer',
+  'data ops',
+  'dataops',
+  'data architect',
+  'cloud data',
+  'big data engineer',
+  'big data developer',
+  'streaming engineer',
+  'streaming data',
+  'real-time data',
+  'data modeler',
+  'database engineer',
+  'bi engineer',
+  'bi developer',
+  'business intelligence engineer',
+  'mlops engineer',
+  'ml engineer',
+  'machine learning engineer',
+  'data reliability engineer',
+  'data solutions engineer',
+  'data consultant',
+];
+
+const DE_TECH_KEYWORDS = [
   'etl',
   'elt',
   'data pipeline',
   'spark',
+  'pyspark',
   'databricks',
   'airflow',
   'kafka',
-  'data platform',
-  'data infrastructure',
-  'analytics engineer',
-  'dbt',
-  'snowflake',
-  'data warehouse',
-  'lakehouse',
-  'data lake',
-  'pipeline engineer',
-  'big data',
-  'pyspark',
+  'flink',
   'hadoop',
   'hive',
-  'flink',
-  'glue',
+  'dbt',
+  'snowflake',
   'redshift',
   'bigquery',
+  'data warehouse',
+  'data lake',
+  'lakehouse',
   'delta lake',
   'iceberg',
-  'medallion',
-  'dataops',
+  'medallion architecture',
+  'glue',
 ];
 
 function isDataEngineeringRole(title: string, description: string): boolean {
-  const text = `${title} ${description}`.toLowerCase();
-  return DE_KEYWORDS.some(kw => text.includes(kw));
+  const titleLower = title.toLowerCase();
+  // Title match alone is sufficient for role-name keywords
+  if (DE_TITLE_KEYWORDS.some(kw => titleLower.includes(kw))) return true;
+  // For technology keywords, require both title to be broadly tech AND description to contain the term
+  const descLower = description.toLowerCase();
+  return DE_TECH_KEYWORDS.some(kw => descLower.includes(kw));
 }
 
 // ── USA / Remote location filter ───────────────────────────────────────────
 
-// US state abbreviations and names used in location strings
 const US_STATE_ABBR = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
   'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
@@ -87,18 +123,17 @@ const US_PATTERNS = [
   ', us',
   'us-',
   'america',
-  'remote', // remote-first platforms like RemoteOK are US-centric
+  'remote',
   'anywhere',
+  'worldwide',
 ];
 
 function isUSOrRemote(location: string): boolean {
   if (!location) return false;
   const loc = location.toLowerCase().trim();
 
-  // Check plain-text patterns
   if (US_PATTERNS.some(p => loc.includes(p))) return true;
 
-  // Check ", XX" or "XX," state abbreviation patterns
   for (const abbr of US_STATE_ABBR) {
     const lower = abbr.toLowerCase();
     if (
@@ -106,7 +141,6 @@ function isUSOrRemote(location: string): boolean {
       loc.startsWith(`${lower},`) ||
       loc === lower ||
       loc.includes(`, ${lower},`) ||
-      // e.g. "New York, NY" or "Austin, TX"
       new RegExp(`\\b${lower}\\b`).test(loc)
     ) return true;
   }
@@ -129,7 +163,6 @@ async function fetchRemoteOK(): Promise<RawJob[]> {
   if (!res.ok) throw new Error(`RemoteOK ${res.status}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data: any[] = await res.json();
-  // First element is a legal metadata object — skip it
   return data
     .filter(j => j.id && j.position && j.company)
     .map(j => ({
@@ -167,15 +200,59 @@ async function fetchArbeitnowPage(page: number): Promise<RawJob[]> {
 }
 
 async function fetchArbeitnow(): Promise<RawJob[]> {
-  // Fetch pages 1 and 2 in parallel for better coverage
-  const [page1, page2] = await Promise.allSettled([
+  // Fetch pages 1, 2, 3 in parallel for maximum coverage
+  const [page1, page2, page3] = await Promise.allSettled([
     fetchArbeitnowPage(1),
     fetchArbeitnowPage(2),
+    fetchArbeitnowPage(3),
   ]);
   return [
     ...(page1.status === 'fulfilled' ? page1.value : []),
     ...(page2.status === 'fulfilled' ? page2.value : []),
+    ...(page3.status === 'fulfilled' ? page3.value : []),
   ];
+}
+
+// ── Remotive ───────────────────────────────────────────────────────────────
+async function fetchRemotive(): Promise<RawJob[]> {
+  // Fetch software-dev and data categories
+  const [devRes, dataRes] = await Promise.allSettled([
+    fetch('https://remotive.com/api/remote-jobs?category=software-dev&limit=100', {
+      signal: AbortSignal.timeout(12000),
+    }),
+    fetch('https://remotive.com/api/remote-jobs?category=data&limit=100', {
+      signal: AbortSignal.timeout(12000),
+    }),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parseRemotive = async (res: Response): Promise<any[]> => {
+    if (!res.ok) throw new Error(`Remotive ${res.status}`);
+    const data: { jobs?: unknown[] } = await res.json();
+    return data.jobs || [];
+  };
+
+  const jobs: unknown[] = [];
+  if (devRes.status === 'fulfilled') {
+    try { jobs.push(...await parseRemotive(devRes.value)); } catch { /* skip */ }
+  }
+  if (dataRes.status === 'fulfilled') {
+    try { jobs.push(...await parseRemotive(dataRes.value)); } catch { /* skip */ }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (jobs as any[])
+    .filter((j: { title?: string; company_name?: string }) => j.title && j.company_name)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((j: any) => ({
+      title:       j.title        || 'Data Engineer',
+      company:     j.company_name || 'Unknown',
+      location:    j.candidate_required_location || 'Remote',
+      description: [j.title, j.company_name, j.candidate_required_location, j.description].filter(Boolean).join('\n'),
+      url:         j.url          || '',
+      source:      'Remotive',
+    }))
+    .filter((j: RawJob) => isDataEngineeringRole(j.title, j.description) && isUSOrRemote(j.location));
 }
 
 // ── POST handler ───────────────────────────────────────────────────────────
@@ -184,15 +261,17 @@ export async function POST(request: NextRequest) {
     const userId = getUserId(request);
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Fetch from both sources in parallel (don't fail if one is down)
-    const [remoteOkResult, arbeitnowResult] = await Promise.allSettled([
+    // Fetch from all 3 sources in parallel (don't fail if one is down)
+    const [remoteOkResult, arbeitnowResult, remotiveResult] = await Promise.allSettled([
       fetchRemoteOK(),
       fetchArbeitnow(),
+      fetchRemotive(),
     ]);
 
     const allRaw: RawJob[] = [
-      ...(remoteOkResult.status  === 'fulfilled' ? remoteOkResult.value  : []),
-      ...(arbeitnowResult.status === 'fulfilled' ? arbeitnowResult.value : []),
+      ...(remoteOkResult.status   === 'fulfilled' ? remoteOkResult.value   : []),
+      ...(arbeitnowResult.status  === 'fulfilled' ? arbeitnowResult.value  : []),
+      ...(remotiveResult.status   === 'fulfilled' ? remotiveResult.value   : []),
     ];
 
     const sourceStatus = {
@@ -202,6 +281,9 @@ export async function POST(request: NextRequest) {
       arbeitnow: arbeitnowResult.status === 'fulfilled'
         ? arbeitnowResult.value.length
         : (arbeitnowResult.reason instanceof Error ? arbeitnowResult.reason.message : 'error'),
+      remotive:  remotiveResult.status  === 'fulfilled'
+        ? remotiveResult.value.length
+        : (remotiveResult.reason instanceof Error ? remotiveResult.reason.message : 'error'),
     };
 
     // Load existing fingerprints to avoid duplicates
