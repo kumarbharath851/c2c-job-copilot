@@ -25,6 +25,10 @@
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand, DeleteCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { mockDbGet, mockDbPut, mockDbUpdate, mockDbDelete, mockDbQuery } from './mock';
+
+// Use mock DB when AWS credentials are not configured (local dev without AWS setup)
+const USE_MOCK = !process.env.AWS_ACCESS_KEY_ID && !process.env.AWS_PROFILE;
 
 const client = new DynamoDBClient({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -39,6 +43,7 @@ export const TABLE_NAME = process.env.DYNAMODB_TABLE || 'c2c-job-copilot';
 // ── Helper wrappers ────────────────────────────────────────────────────────
 
 export async function dbGet<T>(pk: string, sk: string): Promise<T | null> {
+  if (USE_MOCK) return mockDbGet<T>(pk, sk);
   const result = await docClient.send(new GetCommand({
     TableName: TABLE_NAME,
     Key: { PK: pk, SK: sk },
@@ -48,6 +53,7 @@ export async function dbGet<T>(pk: string, sk: string): Promise<T | null> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function dbPut(item: any): Promise<void> {
+  if (USE_MOCK) { mockDbPut(item); return; }
   await docClient.send(new PutCommand({ TableName: TABLE_NAME, Item: item }));
 }
 
@@ -56,6 +62,7 @@ export async function dbUpdate(
   sk: string,
   updates: Record<string, unknown>
 ): Promise<void> {
+  if (USE_MOCK) { mockDbUpdate(pk, sk, updates); return; }
   const keys = Object.keys(updates);
   if (keys.length === 0) return;
 
@@ -73,6 +80,7 @@ export async function dbUpdate(
 }
 
 export async function dbDelete(pk: string, sk: string): Promise<void> {
+  if (USE_MOCK) { mockDbDelete(pk, sk); return; }
   await docClient.send(new DeleteCommand({
     TableName: TABLE_NAME,
     Key: { PK: pk, SK: sk },
@@ -90,6 +98,7 @@ export async function dbQuery<T>(
     expressionAttributeNames?: Record<string, string>;
   }
 ): Promise<T[]> {
+  if (USE_MOCK) return mockDbQuery<T>(pk, { skPrefix: options?.skPrefix, limit: options?.limit });
   const keyCondition = options?.skPrefix
     ? 'PK = :pk AND begins_with(SK, :skPrefix)'
     : 'PK = :pk';
