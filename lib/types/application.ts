@@ -15,6 +15,8 @@ export interface ApplicationNote {
   createdAt: string;
 }
 
+import type { ATSScore } from '@/lib/ai/scoring';
+
 export interface Application {
   applicationId: string;
   userId: string;
@@ -22,6 +24,7 @@ export interface Application {
   resumeId?: string;
   tailoredResumeId?: string;
   status: ApplicationStatus;
+  atsScore?: ATSScore;          // ATS score after resume tailoring
   appliedAt?: string;
   notes: ApplicationNote[];
   recruiterContactId?: string;

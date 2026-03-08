@@ -91,6 +91,8 @@ export interface ResumeDiffSection {
   accepted: boolean | null;   // null = pending user review
 }
 
+import type { ATSScore } from '@/lib/ai/scoring';
+
 export interface TailoredResume {
   tailoredResumeId: string;
   userId: string;
@@ -100,11 +102,16 @@ export interface TailoredResume {
   diff: ResumeDiffSection[];
   missingSkillsWarning: string[];   // skills in JD not in resume — NOT added
   tailoredParsed?: ParsedResume;    // final merged parsed resume after user acceptance
+  overallGuidance?: string;
+  originalAtsScore?: ATSScore;      // baseline ATS on original resume
+  atsScore?: ATSScore;              // computed after AI tailoring completes
   aiAuditId: string;
   generatedAt: string;
   acceptedAt?: string;
   s3Key?: string;                   // exported PDF/DOCX location
 }
+
+export type { ATSScore };
 
 // ── AI audit log ───────────────────────────────────────────────────────────
 

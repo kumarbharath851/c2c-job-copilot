@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { Check, X, AlertTriangle, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import type { TailoredResume, ResumeDiffSection, ChangeType } from '@/lib/types/resume';
 import { Button } from '@/components/ui/Button';
+import { ATSScoreComparison, ATSScoreBadge } from '@/components/ui/ATSScoreBadge';
 
 const CHANGE_LABELS: Record<ChangeType, string> = {
   rephrase:              'Rephrased',
@@ -187,7 +188,14 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
             )}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Baseline ATS chip while tailoring is in-progress */}
+          {tailoredResume.originalAtsScore && !tailoredResume.atsScore && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wide">Baseline ATS</span>
+              <ATSScoreBadge score={tailoredResume.originalAtsScore} size="sm" />
+            </div>
+          )}
           <Button size="xs" variant="secondary" onClick={rejectAll}>Reject All</Button>
           <Button size="xs" variant="success" onClick={acceptAll}>Accept All</Button>
           <Button
@@ -200,6 +208,14 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
           </Button>
         </div>
       </div>
+
+      {/* ATS Score comparison — only when both scores are available */}
+      {tailoredResume.originalAtsScore && tailoredResume.atsScore && (
+        <ATSScoreComparison
+          original={tailoredResume.originalAtsScore}
+          tailored={tailoredResume.atsScore}
+        />
+      )}
 
       {/* Missing skills warning */}
       {tailoredResume.missingSkillsWarning?.length > 0 && (
@@ -218,6 +234,17 @@ export function ResumeDiffViewer({ tailoredResume, onSaveAccepted }: ResumeDiffV
                 </span>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overall AI guidance */}
+      {tailoredResume.overallGuidance && (
+        <div className="flex items-start gap-3 rounded-2xl border border-brand/20 bg-brand/5 p-4">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-light" />
+          <div>
+            <p className="text-sm font-semibold text-brand-light">Overall Guidance</p>
+            <p className="mt-0.5 text-xs text-slate-400 leading-relaxed">{tailoredResume.overallGuidance}</p>
           </div>
         </div>
       )}

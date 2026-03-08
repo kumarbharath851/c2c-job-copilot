@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { clsx } from 'clsx';
 import type { Application, ApplicationStatus } from '@/lib/types/application';
-import { StatusBadge, C2CBadge, ScoreBadge, RateBadge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { StatusBadge, C2CBadge, RateBadge } from '@/components/ui/Badge';
+import { ATSScoreChip } from '@/components/ui/ATSScoreBadge';
 import { Building2, Clock, GripVertical } from 'lucide-react';
 
 const COLUMNS: ApplicationStatus[] = [
@@ -79,6 +79,7 @@ function ApplicationCard({
               {app.job.score.overall}% match
             </span>
           )}
+          {app.atsScore && <ATSScoreChip score={app.atsScore} />}
         </div>
 
         {/* Timeline */}

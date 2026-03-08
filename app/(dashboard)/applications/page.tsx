@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { KanbanSquare, Plus, BarChart3 } from 'lucide-react';
 import { KanbanBoard } from '@/components/applications/KanbanBoard';
 import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/Badge';
+import { ATSScoreChip } from '@/components/ui/ATSScoreBadge';
 import type { Application, ApplicationStatus } from '@/lib/types/application';
 
 interface EnrichedApplication extends Application {
@@ -56,6 +58,7 @@ export default function ApplicationsPage() {
     applied: applications.filter(a => a.status === 'Applied').length,
     interviews: applications.filter(a => a.status === 'Interview').length,
     offers: applications.filter(a => a.status === 'Offer').length,
+    scored: applications.filter(a => a.atsScore !== undefined).length,
   };
 
   return (
@@ -69,7 +72,10 @@ export default function ApplicationsPage() {
             <span className="text-indigo-400">{counts.applied} applied</span> ·{' '}
             <span className="text-emerald-400">{counts.interviews} interviews</span>
             {counts.offers > 0 && (
-              <> · <span className="text-amber-400">{counts.offers} offers 🎉</span></>
+              <> · <span className="text-amber-400">{counts.offers} offers</span></>
+            )}
+            {counts.scored > 0 && (
+              <> · <span className="text-violet-400">{counts.scored} ATS scored</span></>
             )}
           </p>
         </div>
@@ -112,7 +118,18 @@ export default function ApplicationsPage() {
           onStatusChange={handleStatusChange}
         />
       ) : (
-        <div className="space-y-2">
+        <div className="rounded-xl border border-surface-border overflow-hidden">
+          {/* List header */}
+          {applications.length > 0 && (
+            <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 border-b border-surface-border bg-surface-overlay px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <span>Role / Company</span>
+              <span className="w-28 text-center">ATS Score</span>
+              <span className="w-24 text-center">Applied</span>
+              <span className="w-20 text-center">Match</span>
+              <span className="w-36 text-center">Status</span>
+            </div>
+          )}
+
           {applications.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-20 text-slate-500">
               <KanbanSquare className="h-10 w-10" />
@@ -120,30 +137,60 @@ export default function ApplicationsPage() {
               <p className="text-xs text-slate-600">Save or apply to a job to track it here.</p>
             </div>
           ) : (
-            applications.map(app => (
+            applications.map((app, idx) => (
               <div
                 key={app.applicationId}
-                className="flex items-center justify-between gap-3 rounded-xl border border-surface-border bg-surface-raised px-4 py-3"
+                className={`grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 px-4 py-3 transition hover:bg-surface-overlay ${idx !== applications.length - 1 ? 'border-b border-surface-border' : ''}`}
               >
-                <div className="min-w-0 flex-1">
+                {/* Role + company */}
+                <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-100">
                     {app.job?.title || 'Data Engineer'}
                   </p>
-                  <p className="truncate text-xs text-slate-400">{app.job?.company}</p>
+                  <p className="truncate text-xs text-slate-400">{app.job?.company || '—'}</p>
                 </div>
-                <p className="text-xs text-slate-500">
-                  {app.appliedAt ? new Date(app.appliedAt).toLocaleDateString() : '—'}
-                </p>
-                <select
-                  value={app.status}
-                  onChange={e => handleStatusChange(app.applicationId, e.target.value as ApplicationStatus)}
-                  className="rounded-lg border border-surface-border bg-surface-overlay px-2 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand/40"
-                  aria-label={`Status for ${app.job?.title}`}
-                >
-                  {(['Saved','Reviewing','Tailored','Applied','Interview','Rejected','Offer'] as ApplicationStatus[]).map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+
+                {/* ATS Score column */}
+                <div className="w-28 flex justify-center">
+                  {app.atsScore ? (
+                    <ATSScoreChip score={app.atsScore} />
+                  ) : (
+                    <span className="text-[10px] text-slate-600">—</span>
+                  )}
+                </div>
+
+                {/* Applied date */}
+                <div className="w-24 text-center">
+                  <p className="text-xs text-slate-500">
+                    {app.appliedAt ? new Date(app.appliedAt).toLocaleDateString() : '—'}
+                  </p>
+                </div>
+
+                {/* Match score */}
+                <div className="w-20 text-center">
+                  {app.job?.score?.overall !== undefined ? (
+                    <span className="text-xs font-semibold text-indigo-400">
+                      {app.job.score.overall}%
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-600">—</span>
+                  )}
+                </div>
+
+                {/* Status column */}
+                <div className="w-36 flex items-center gap-2">
+                  <StatusBadge status={app.status} />
+                  <select
+                    value={app.status}
+                    onChange={e => handleStatusChange(app.applicationId, e.target.value as ApplicationStatus)}
+                    className="flex-1 min-w-0 rounded-lg border border-surface-border bg-surface-overlay px-1.5 py-1 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-brand/40"
+                    aria-label={`Change status for ${app.job?.title}`}
+                  >
+                    {(['Saved','Reviewing','Tailored','Applied','Interview','Rejected','Offer'] as ApplicationStatus[]).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             ))
           )}
