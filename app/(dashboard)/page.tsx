@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { clsx } from 'clsx';
 import {
   Briefcase, KanbanSquare, Sparkles, TrendingUp,
   AlarmClock, CheckCircle2, XCircle, Trophy,
-  ArrowRight, Plus,
+  ArrowRight, Plus, Bell, X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,9 @@ import { C2CBadge, ScoreBadge } from '@/components/ui/Badge';
 import type { Job } from '@/lib/types/job';
 import type { Application } from '@/lib/types/application';
 import { apiFetch } from '@/lib/api';
+
+const AUTO_DISCOVER_MS = 10 * 60 * 1000; // 10 minutes
+const LS_LAST_DISCOVER = 'c2c_last_discovered_at';
 
 interface DashboardMetrics {
   newJobs: number;
@@ -68,49 +71,86 @@ export default function DashboardPage() {
   const [ingestUrl, setIngestUrl] = useState('');
   const [ingesting, setIngesting] = useState(false);
   const [ingestResult, setIngestResult] = useState<{ title?: string; c2cStatus?: string } | null>(null);
+  const [newJobsAlert, setNewJobsAlert] = useState<{ added: number; timestamp: Date } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [jobsRes, appsRes] = await Promise.all([
-          apiFetch('/api/jobs?limit=5&sort=ingestedAt'),
-          apiFetch('/api/applications'),
-        ]);
-        const jobsData = await jobsRes.json();
-        const appsData = await appsRes.json();
+  const loadDashboard = useCallback(async () => {
+    try {
+      const [jobsRes, appsRes] = await Promise.all([
+        apiFetch('/api/jobs?limit=5&sort=ingestedAt'),
+        apiFetch('/api/applications'),
+      ]);
+      const jobsData = await jobsRes.json();
+      const appsData = await appsRes.json();
 
-        const jobs: Job[] = jobsData.jobs || [];
-        const apps: Application[] = appsData.applications || [];
+      const jobs: Job[] = jobsData.jobs || [];
+      const apps: Application[] = appsData.applications || [];
 
-        const newJobs = jobs.filter(j => j.status === 'new').length;
-        const c2cConfirmed = jobs.filter(j => j.c2cStatus === 'confirmed' || j.c2cStatus === 'likely').length;
-        const applied = apps.filter(a => a.status === 'Applied').length;
-        const interviews = apps.filter(a => a.status === 'Interview').length;
-        const offers = apps.filter(a => a.status === 'Offer').length;
-        const scored = jobs.filter(j => j.score?.overall);
-        const avgMatchScore = scored.length > 0
-          ? Math.round(scored.reduce((s, j) => s + (j.score?.overall || 0), 0) / scored.length)
-          : 0;
+      const newJobs = jobs.filter(j => j.status === 'new').length;
+      const c2cConfirmed = jobs.filter(j => j.c2cStatus === 'confirmed' || j.c2cStatus === 'likely').length;
+      const applied = apps.filter(a => a.status === 'Applied').length;
+      const interviews = apps.filter(a => a.status === 'Interview').length;
+      const offers = apps.filter(a => a.status === 'Offer').length;
+      const scored = jobs.filter(j => j.score?.overall);
+      const avgMatchScore = scored.length > 0
+        ? Math.round(scored.reduce((s, j) => s + (j.score?.overall || 0), 0) / scored.length)
+        : 0;
 
-        setMetrics({
-          newJobs,
-          totalJobs: jobsData.total || 0,
-          applied,
-          interviews,
-          offers,
-          avgMatchScore,
-          c2cConfirmed,
-        });
-        setRecentJobs(jobs.slice(0, 4));
-      } catch {
-        // Demo fallback metrics
-        setMetrics({ newJobs: 14, totalJobs: 47, applied: 8, interviews: 3, offers: 1, avgMatchScore: 78, c2cConfirmed: 22 });
-      } finally {
-        setLoading(false);
-      }
+      setMetrics({
+        newJobs,
+        totalJobs: jobsData.total || 0,
+        applied,
+        interviews,
+        offers,
+        avgMatchScore,
+        c2cConfirmed,
+      });
+      setRecentJobs(jobs.slice(0, 4));
+    } catch {
+      setMetrics({ newJobs: 14, totalJobs: 47, applied: 8, interviews: 3, offers: 1, avgMatchScore: 78, c2cConfirmed: 22 });
+    } finally {
+      setLoading(false);
     }
-    load();
   }, []);
+
+  const runDiscover = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/jobs/discover', { method: 'POST' });
+      if (!res.ok) return;
+      const data = await res.json();
+      localStorage.setItem(LS_LAST_DISCOVER, Date.now().toString());
+      if (data.added > 0) {
+        setNewJobsAlert({ added: data.added, timestamp: new Date() });
+        loadDashboard();
+      }
+    } catch {
+      // Silent fail — background discovery should never interrupt UX
+    }
+  }, [loadDashboard]);
+
+  // Initial dashboard load
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // Auto-discover on a smart 10-minute schedule.
+  // Respects the last run time stored in localStorage so reloading the page
+  // doesn't restart the 10-minute clock from zero.
+  useEffect(() => {
+    const schedule = () => {
+      const lastMs = parseInt(localStorage.getItem(LS_LAST_DISCOVER) || '0', 10);
+      const elapsed = Date.now() - lastMs;
+      const waitMs = Math.max(0, AUTO_DISCOVER_MS - elapsed);
+
+      timerRef.current = setTimeout(async () => {
+        await runDiscover();
+        schedule(); // queue the next run 10 min from now
+      }, waitMs);
+    };
+
+    schedule();
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [runDiscover]);
 
   async function handleIngest(e: React.FormEvent) {
     e.preventDefault();
@@ -142,6 +182,28 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8 page-enter">
+
+      {/* ── Auto-discover alert banner ─────────────────────────────────────── */}
+      {newJobsAlert && (
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-300 animate-slide-up">
+          <Bell className="h-4 w-4 shrink-0 text-emerald-400" />
+          <span className="flex-1">
+            <strong className="text-emerald-200">{newJobsAlert.added} new Data Engineer job{newJobsAlert.added !== 1 ? 's' : ''}</strong>
+            {' '}discovered automatically at {newJobsAlert.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.{' '}
+            <Link href="/jobs" className="font-medium underline underline-offset-2 hover:text-emerald-200">
+              View new jobs →
+            </Link>
+          </span>
+          <button
+            onClick={() => setNewJobsAlert(null)}
+            className="shrink-0 rounded-lg p-1 text-emerald-500 hover:text-emerald-300 transition"
+            aria-label="Dismiss alert"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Welcome banner */}
       <div className="rounded-2xl border border-brand/20 bg-gradient-to-r from-brand/10 via-surface-overlay to-surface-raised p-6 shadow-glow">
         <h1 className="text-xl font-bold text-slate-100">
@@ -176,12 +238,12 @@ export default function DashboardPage() {
             Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
           ) : metrics ? (
             <>
-              <MetricCard label="New Jobs"      value={metrics.newJobs}       icon={Briefcase}    color="bg-brand/15 text-brand-light"    sub="today" />
-              <MetricCard label="Total Jobs"    value={metrics.totalJobs}     icon={TrendingUp}   color="bg-indigo-500/15 text-indigo-400" sub="all time" />
+              <MetricCard label="New Jobs"      value={metrics.newJobs}       icon={Briefcase}    color="bg-brand/15 text-brand-light"       sub="today" />
+              <MetricCard label="Total Jobs"    value={metrics.totalJobs}     icon={TrendingUp}   color="bg-indigo-500/15 text-indigo-400"   sub="all time" />
               <MetricCard label="C2C Eligible"  value={metrics.c2cConfirmed}  icon={CheckCircle2} color="bg-emerald-500/15 text-emerald-400" sub="confirmed or likely" />
-              <MetricCard label="Applied"       value={metrics.applied}       icon={AlarmClock}   color="bg-sky-500/15 text-sky-400"       sub="in tracker" />
-              <MetricCard label="Interviews"    value={metrics.interviews}    icon={KanbanSquare} color="bg-violet-500/15 text-violet-400" sub="active" />
-              <MetricCard label="Offers"        value={metrics.offers}        icon={Trophy}       color="bg-amber-500/15 text-amber-400"   sub="🎉" />
+              <MetricCard label="Applied"       value={metrics.applied}       icon={AlarmClock}   color="bg-sky-500/15 text-sky-400"         sub="in tracker" />
+              <MetricCard label="Interviews"    value={metrics.interviews}    icon={KanbanSquare} color="bg-violet-500/15 text-violet-400"   sub="active" />
+              <MetricCard label="Offers"        value={metrics.offers}        icon={Trophy}       color="bg-amber-500/15 text-amber-400"     sub="🎉" />
             </>
           ) : null}
         </div>
@@ -256,7 +318,7 @@ export default function DashboardPage() {
           <div className="rounded-2xl border border-surface-border bg-surface-raised py-12 text-center">
             <Briefcase className="mx-auto h-8 w-8 text-slate-600" />
             <p className="mt-3 text-sm font-medium text-slate-400">No jobs yet.</p>
-            <p className="mt-1 text-xs text-slate-600">Paste a job URL above to get started.</p>
+            <p className="mt-1 text-xs text-slate-600">Paste a job URL above or use Discover Jobs.</p>
           </div>
         )}
       </section>
