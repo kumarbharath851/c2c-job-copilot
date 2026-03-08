@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
-import { Search, Filter, SlidersHorizontal, RefreshCw, Briefcase } from 'lucide-react';
+import { Search, SlidersHorizontal, RefreshCw, Briefcase, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { JobCard } from '@/components/jobs/JobCard';
 import { Button } from '@/components/ui/Button';
 import type { Job } from '@/lib/types/job';
@@ -45,6 +45,8 @@ export default function JobsPage() {
   const [minRate, setMinRate] = useState('');
   const [skills, setSkills] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverResult, setDiscoverResult] = useState<{ added: number; fetched: number; error?: string } | null>(null);
 
   const fetchJobs = useCallback(async (append = false) => {
     setLoading(true);
@@ -85,6 +87,22 @@ export default function JobsPage() {
     setJobs(prev => prev.map(j => j.jobId === jobId ? { ...j, status: newStatus as 'saved' } : j));
   }
 
+  async function handleDiscover() {
+    setDiscovering(true);
+    setDiscoverResult(null);
+    try {
+      const res = await apiFetch('/api/jobs/discover', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Discovery failed');
+      setDiscoverResult({ added: data.added, fetched: data.fetched });
+      if (data.added > 0) fetchJobs(false);
+    } catch (err) {
+      setDiscoverResult({ added: 0, fetched: 0, error: err instanceof Error ? err.message : 'Discovery failed' });
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
   return (
     <div className="space-y-6 page-enter">
       {/* Page header */}
@@ -92,19 +110,54 @@ export default function JobsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Jobs</h1>
           <p className="text-sm text-slate-400">
-            {total > 0 ? `${total} jobs in your list` : 'No jobs yet — paste a URL to get started'}
+            {total > 0 ? `${total} jobs in your list` : 'No jobs yet — discover or paste a URL to get started'}
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-          onClick={() => fetchJobs(false)}
-          loading={loading}
-        >
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+            onClick={() => fetchJobs(false)}
+            loading={loading}
+          >
+            Refresh
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<Sparkles className="h-3.5 w-3.5" />}
+            onClick={handleDiscover}
+            loading={discovering}
+          >
+            Discover Jobs
+          </Button>
+        </div>
       </div>
+
+      {/* Discovery result banner */}
+      {discoverResult && (
+        <div className={clsx(
+          'flex items-start gap-2 rounded-xl border px-4 py-3 text-sm animate-slide-up',
+          discoverResult.error
+            ? 'border-red-500/30 bg-red-500/8 text-red-400'
+            : discoverResult.added > 0
+              ? 'border-emerald-500/30 bg-emerald-500/8 text-emerald-300'
+              : 'border-slate-600 bg-surface-overlay text-slate-400',
+        )}>
+          {discoverResult.error ? (
+            <><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{discoverResult.error}</>
+          ) : discoverResult.added > 0 ? (
+            <><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              Found <strong className="text-emerald-200">{discoverResult.added} new job{discoverResult.added !== 1 ? 's' : ''}</strong> from {discoverResult.fetched} listings scanned. C2C status auto-classified.
+            </>
+          ) : (
+            <><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              Scanned {discoverResult.fetched} listings — no new jobs found (all already in your list).
+            </>
+          )}
+        </div>
+      )}
 
       {/* Search + filter bar */}
       <div className="space-y-3">
