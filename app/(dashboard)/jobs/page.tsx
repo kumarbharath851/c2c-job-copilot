@@ -31,14 +31,33 @@ const SORT_OPTIONS = [
 ];
 
 // ─── Module-level cache ───────────────────────────────────────────────────────
-// Persists across client-side navigation within the same browser tab so the
-// jobs list is shown instantly on return visits instead of re-fetching everything.
+// Persists across client-side navigation (memory) AND full page reloads
+// (sessionStorage) so the jobs list is never reset to 0 unexpectedly.
+const CACHE_KEY = 'c2c_jobs_cache';
+
 const _cache: {
   jobs: Job[];
   total: number;
   cursor: string | null;
   filtersKey: string;
 } = { jobs: [], total: 0, cursor: null, filtersKey: '' };
+
+// Hydrate from sessionStorage on module load (survives Ctrl+R / F5)
+;(function hydrateCache() {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (raw) Object.assign(_cache, JSON.parse(raw));
+  } catch { /* ignore parse / quota errors */ }
+})();
+
+// Write current cache snapshot to sessionStorage
+function persistCache() {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify(_cache));
+  } catch { /* storage quota — soft fail */ }
+}
 
 function makeFiltersKey(
   keyword: string, c2c: string, workMode: string,
@@ -100,6 +119,7 @@ export default function JobsPage() {
         _cache.total = data.total || 0;
         _cache.cursor = data.cursor || null;
         _cache.filtersKey = key;
+        persistCache();
         return merged;
       });
       setTotal(data.total || 0);
@@ -133,6 +153,7 @@ export default function JobsPage() {
       setTotal(data.total || 0);
       _cache.total = data.total || 0;
       _cache.cursor = data.cursor || null;
+      persistCache();
     } catch {
       // Silent — user still sees the cached list
     }
@@ -163,6 +184,7 @@ export default function JobsPage() {
     }
     setNewJobsCount(0);
     _cache.filtersKey = ''; // invalidate cache so next mount re-fetches
+    persistCache();
     const t = setTimeout(() => fetchJobs(false), 300);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -177,6 +199,7 @@ export default function JobsPage() {
     setJobs(prev => {
       const updated = prev.map(j => j.jobId === jobId ? { ...j, status: newStatus as 'saved' } : j);
       _cache.jobs = updated;
+      persistCache();
       return updated;
     });
   }
